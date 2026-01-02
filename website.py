@@ -8,216 +8,579 @@ app = Flask(__name__)
 
 HTML = """
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>Toto Gemma - Under-5 Screening</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 16px; max-width: 860px; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin: 12px 0; }
-    label { display:block; margin: 8px 0 4px; font-weight: 600; }
-    input[type="number"], input[type="text"], select, textarea {
-      width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #ccc;
-      box-sizing: border-box;
+    :root {
+      --bg: #0b1020;
+      --surface: rgba(255,255,255,0.06);
+      --card: rgba(255,255,255,0.08);
+      --text: rgba(255,255,255,0.92);
+      --muted: rgba(255,255,255,0.68);
+      --border: rgba(255,255,255,0.14);
+      --shadow: 0 10px 30px rgba(0,0,0,0.28);
+      --accent: #7c6cff;
+      --accent2: #20c997;
+      --danger: #ff5c77;
+      --warn: #ffcf5a;
+      --ok: #2fd07c;
+      --radius: 16px;
     }
-    textarea { min-height: 120px; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .btn { padding: 12px 14px; border: 0; border-radius: 10px; font-weight: 700; cursor: pointer; display:inline-block; text-decoration:none; text-align:center; }
-    .btn-primary { background: #111; color: #fff; width: 100%; }
-    .btn-secondary { background: #f1f1f1; color: #111; }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7fb;
+        --surface: rgba(0,0,0,0.03);
+        --card: rgba(255,255,255,0.9);
+        --text: rgba(10,14,28,0.92);
+        --muted: rgba(10,14,28,0.62);
+        --border: rgba(10,14,28,0.10);
+        --shadow: 0 10px 30px rgba(10,14,28,0.10);
+        --accent: #5b57ff;
+        --accent2: #12b886;
+        --danger: #e03131;
+        --warn: #f59f00;
+        --ok: #2f9e44;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 700px at 10% 0%, rgba(124,108,255,0.25), transparent 60%),
+        radial-gradient(900px 500px at 90% 20%, rgba(32,201,151,0.20), transparent 55%),
+        var(--bg);
+    }
+    a { color: inherit; }
+    .container { max-width: 980px; margin: 0 auto; padding: 18px 14px 28px; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .brand { display: grid; gap: 2px; }
+    .brand h1 { font-size: 1.05rem; margin: 0; letter-spacing: 0.2px; }
+    .brand p { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.3; }
+    .badges { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+    .badge {
+      display:inline-flex;
+      align-items:center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      font-weight: 650;
+      font-size: 0.88rem;
+      white-space: nowrap;
+    }
+    .badge-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent2); box-shadow: 0 0 0 3px rgba(32,201,151,0.18); }
+    .grid { display: grid; gap: 14px; margin-top: 14px; }
+    @media (min-width: 920px) {
+      .grid { grid-template-columns: 1.05fr 0.95fr; align-items: start; }
+    }
+    .card {
+      border: 1px solid var(--border);
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .card + .card { margin-top: 14px; }
+    .card h2 { margin: 0 0 10px; font-size: 1.02rem; }
+    .card h3 { margin: 0 0 10px; font-size: 0.98rem; }
+    .muted { color: var(--muted); font-size: 0.95rem; }
+    .hint { margin-top: 6px; color: var(--muted); font-size: 0.9rem; }
+    .divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+    .result {
+      position: relative;
+      overflow: hidden;
+    }
+    .result::before {
+      content: "";
+      position: absolute;
+      inset: -2px;
+      background: radial-gradient(500px 250px at 15% 0%, rgba(124,108,255,0.35), transparent 60%);
+      pointer-events: none;
+      opacity: 0.6;
+    }
+    .result > * { position: relative; }
+
+    .pill-row { display:flex; flex-wrap:wrap; gap: 8px; margin-bottom: 10px; }
+    .pill {
+      display:inline-flex;
+      align-items:center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      font-weight: 700;
+      font-size: 0.88rem;
+    }
+    .pill strong { font-weight: 800; }
+
+    .danger { border-color: rgba(255,92,119,0.35); background: linear-gradient(180deg, rgba(255,92,119,0.16), rgba(255,255,255,0.06)); }
+    .warn { border-color: rgba(255,207,90,0.35); background: linear-gradient(180deg, rgba(255,207,90,0.16), rgba(255,255,255,0.06)); }
+    .ok { border-color: rgba(47,208,124,0.35); background: linear-gradient(180deg, rgba(47,208,124,0.16), rgba(255,255,255,0.06)); }
+
+    form { margin: 0; }
+    label { display:block; margin: 10px 0 6px; font-weight: 700; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    @media (min-width: 640px) {
+      .row { grid-template-columns: 1fr 1fr; }
+    }
+    input[type="number"], input[type="text"], input[type="tel"], select, textarea {
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      outline: none;
+    }
+    textarea { min-height: 132px; resize: vertical; }
+    select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 18px) calc(1em + 2px), calc(100% - 13px) calc(1em + 2px); background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; padding-right: 40px; }
+    input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.45); }
+    @media (prefers-color-scheme: light) {
+      input::placeholder, textarea::placeholder { color: rgba(10,14,28,0.38); }
+    }
+    input:focus, select:focus, textarea:focus { border-color: rgba(124,108,255,0.65); box-shadow: 0 0 0 4px rgba(124,108,255,0.18); }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.04);
+    }
+    .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+    .segmented label {
+      margin: 0;
+      padding: 10px 12px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .segmented label:hover { background: rgba(255,255,255,0.06); }
+    .segmented input:focus-visible + label { outline: 3px solid rgba(124,108,255,0.45); outline-offset: -3px; }
+    .segmented input:checked + label {
+      background: rgba(124,108,255,0.20);
+      border-left: 1px solid rgba(124,108,255,0.25);
+      border-right: 1px solid rgba(124,108,255,0.25);
+    }
+    .segmented label:first-of-type { border-right: 1px solid var(--border); }
+
+    .btn-row { display:flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .btn {
+      padding: 12px 14px;
+      border: 1px solid transparent;
+      border-radius: 14px;
+      font-weight: 850;
+      cursor: pointer;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap: 10px;
+      text-decoration:none;
+      text-align:center;
+      min-height: 44px;
+      transition: transform 0.05s ease, filter 0.15s ease, background 0.15s ease;
+      flex: 1 1 220px;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: rgba(255,255,255,0.08); border-color: var(--border); color: var(--text); }
     .btn-whatsapp { background: #25D366; color: #fff; }
-    .pill { display:inline-block; padding: 6px 10px; border-radius: 999px; background: #f4f4f4; margin-right: 8px; font-weight: 700; }
-    .warn { background: #fff3cd; border: 1px solid #ffe69c; }
-    .danger { background: #f8d7da; border: 1px solid #f1aeb5; }
-    .ok { background: #d1e7dd; border: 1px solid #a3cfbb; }
-    small { color:#555; }
-    .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
-    .btn-row > a, .btn-row > button { flex: 1 1 220px; }
-    .muted { color:#666; font-size: 0.95rem; }
+    .btn:focus-visible { outline: 3px solid rgba(124,108,255,0.55); outline-offset: 3px; }
+    .btn svg { width: 18px; height: 18px; }
+
+    .sticky-actions {
+      position: sticky;
+      bottom: 10px;
+      margin-top: 14px;
+      z-index: 3;
+    }
+
+    .hidden { display: none !important; }
+
+    ul { margin: 8px 0 0 18px; }
+    li { margin: 6px 0; }
   </style>
 </head>
 <body>
-  <h1>Toto Gemma (Offline) — Under-5 Screening</h1>
-  <p><small>This tool is for screening and coaching. It does not replace clinical care. If danger signs are present, refer urgently.</small></p>
+  {% macro selected(name, value, default_value='') -%}
+    {% if form.get(name, default_value) == value %}selected{% endif %}
+  {%- endmacro %}
+  {% macro checked(name, value, default_value='No') -%}
+    {% if form.get(name, default_value) == value %}checked{% endif %}
+  {%- endmacro %}
 
-  {% if result %}
-    <div class="card {{ result.box_class }}">
-      <div>
-        <span class="pill">Risk: {{ result.risk }}</span>
-        <span class="pill">Top: {{ result.top_condition }}</span>
-        <span class="pill">Certainty: {{ result.certainty }}%</span>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <h1>Toto Gemma — Under-5 Screening</h1>
+        <p>This tool is for screening and coaching. If danger signs are present, refer urgently.</p>
       </div>
-
-      <h3>What to do now</h3>
-      <ul>
-        {% for s in result.actions %}
-          <li>{{ s }}</li>
-        {% endfor %}
-      </ul>
-
-      <h3>Coaching tips for caregiver</h3>
-      <ul>
-        {% for s in result.tips %}
-          <li>{{ s }}</li>
-        {% endfor %}
-      </ul>
-
-      <h3>Also consider</h3>
-      <ul>
-        {% for name, pct in result.alternatives %}
-          <li>{{ name }} — {{ pct }}%</li>
-        {% endfor %}
-      </ul>
+      <div class="badges" aria-label="Status">
+        <span class="badge"><span class="badge-dot" aria-hidden="true"></span>Offline-ready</span>
+      </div>
     </div>
 
-    <div class="card">
-      <h2>Share via WhatsApp</h2>
-      <p class="muted">
-        This does NOT auto-send messages. It opens WhatsApp with a pre-filled summary. The CHW taps Send.
-        If there’s no signal, WhatsApp will send when the phone is online.
-      </p>
+    <div class="grid">
+      <main>
+        {% if result %}
+          <section class="card result {{ result.box_class }}" aria-label="Screening result">
+            <div class="pill-row">
+              <span class="pill"><strong>Risk</strong> {{ result.risk }}</span>
+              <span class="pill"><strong>Most likely</strong> {{ result.top_condition }}</span>
+              <span class="pill"><strong>Certainty</strong> {{ result.certainty }}%</span>
+            </div>
 
-      <label>Message to share (review before sending)</label>
-      <textarea id="shareText" readonly>{{ result.share_message }}</textarea>
+            <h2>What to do now</h2>
+            <ul>
+              {% for s in result.actions %}
+                <li>{{ s }}</li>
+              {% endfor %}
+            </ul>
 
-      <div class="btn-row" style="margin-top:10px;">
-        <a class="btn btn-whatsapp" href="{{ result.wa_caregiver_url }}" target="_blank" rel="noopener">
-          Share to caregiver
-        </a>
-        <a class="btn btn-whatsapp" href="{{ result.wa_supervisor_url }}" target="_blank" rel="noopener">
-          Share to supervisor
-        </a>
-        <button class="btn btn-secondary" type="button" onclick="copyShareText()">Copy summary</button>
-      </div>
+            <div class="divider"></div>
 
-      <p id="copyStatus" class="muted" style="margin-top:10px;"></p>
+            <h2>Coaching tips for caregiver</h2>
+            <ul>
+              {% for s in result.tips %}
+                <li>{{ s }}</li>
+              {% endfor %}
+            </ul>
+
+            <div class="divider"></div>
+
+            <h2>Also consider</h2>
+            <ul>
+              {% for name, pct in result.alternatives %}
+                <li>{{ name }} — {{ pct }}%</li>
+              {% endfor %}
+            </ul>
+
+            <div class="btn-row" style="margin-top: 14px;">
+              <a class="btn btn-secondary" href="#screen" aria-label="Go to screening form">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M12 19V5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M6 11L12 5l6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Back to form
+              </a>
+            </div>
+          </section>
+
+          <section class="card" aria-label="Share via WhatsApp">
+            <h2>Share via WhatsApp</h2>
+            <p class="muted">
+              This does not auto-send. It opens WhatsApp with a pre-filled summary. Review, then tap Send.
+            </p>
+
+            <label for="shareText">Message to share</label>
+            <textarea id="shareText" readonly>{{ result.share_message }}</textarea>
+
+            <div class="btn-row">
+              <a class="btn btn-whatsapp" href="{{ result.wa_caregiver_url }}" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M20 12a8 8 0 0 1-11.82 6.94L4 20l1.12-4.06A8 8 0 1 1 20 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Share to caregiver
+              </a>
+              <a class="btn btn-whatsapp" href="{{ result.wa_supervisor_url }}" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M20 12a8 8 0 0 1-11.82 6.94L4 20l1.12-4.06A8 8 0 1 1 20 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Share to supervisor
+              </a>
+              <button class="btn btn-secondary" type="button" onclick="copyShareText()">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M9 9h10v10H9V9Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                  <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                Copy summary
+              </button>
+            </div>
+
+            <p id="copyStatus" class="muted" style="margin-top:10px;"></p>
+          </section>
+        {% endif %}
+
+        <section id="screen" class="card" aria-label="Under-5 screening form">
+          <h2>Screening form</h2>
+          <p class="muted">Answer the questions below. Defaults are set to reduce taps; change anything that applies.</p>
+
+          <form method="post" novalidate>
+            <div class="row">
+              <div>
+                <label for="age_group">Age group</label>
+                <select id="age_group" name="age_group" required>
+                  <option value="0_2m" {{ selected('age_group','0_2m','0_2m') }}>0–2 months</option>
+                  <option value="2_12m" {{ selected('age_group','2_12m','0_2m') }}>2–12 months</option>
+                  <option value="1_5y" {{ selected('age_group','1_5y','0_2m') }}>1–5 years</option>
+                </select>
+              </div>
+              <div>
+                <label for="wa_caregiver">Caregiver WhatsApp (optional)</label>
+                <input id="wa_caregiver" type="tel" name="wa_caregiver" inputmode="numeric" autocomplete="tel" value="{{ form.get('wa_caregiver','') }}" placeholder="Digits only, include country code">
+              </div>
+            </div>
+
+            <label for="wa_supervisor">Supervisor WhatsApp (optional)</label>
+            <input id="wa_supervisor" type="tel" name="wa_supervisor" inputmode="numeric" autocomplete="tel" value="{{ form.get('wa_supervisor','') }}" placeholder="Digits only, include country code">
+
+            <div class="divider"></div>
+
+            <div class="card warn" aria-label="Danger signs">
+              <h3>Danger signs</h3>
+              <p class="muted">If any are Yes, refer urgently.</p>
+
+              <div class="row">
+                <div>
+                  <label>Not able to drink/breastfeed?</label>
+                  <div class="segmented" role="group" aria-label="Not able to drink or breastfeed">
+                    <input id="ds_drink_no" type="radio" name="ds_drink" value="No" {{ checked('ds_drink','No','No') }}>
+                    <label for="ds_drink_no">No</label>
+                    <input id="ds_drink_yes" type="radio" name="ds_drink" value="Yes" {{ checked('ds_drink','Yes','No') }}>
+                    <label for="ds_drink_yes">Yes</label>
+                  </div>
+                </div>
+                <div>
+                  <label>Vomits everything?</label>
+                  <div class="segmented" role="group" aria-label="Vomits everything">
+                    <input id="ds_vomit_no" type="radio" name="ds_vomit" value="No" {{ checked('ds_vomit','No','No') }}>
+                    <label for="ds_vomit_no">No</label>
+                    <input id="ds_vomit_yes" type="radio" name="ds_vomit" value="Yes" {{ checked('ds_vomit','Yes','No') }}>
+                    <label for="ds_vomit_yes">Yes</label>
+                  </div>
+                </div>
+                <div>
+                  <label>Convulsions?</label>
+                  <div class="segmented" role="group" aria-label="Convulsions">
+                    <input id="ds_convulsions_no" type="radio" name="ds_convulsions" value="No" {{ checked('ds_convulsions','No','No') }}>
+                    <label for="ds_convulsions_no">No</label>
+                    <input id="ds_convulsions_yes" type="radio" name="ds_convulsions" value="Yes" {{ checked('ds_convulsions','Yes','No') }}>
+                    <label for="ds_convulsions_yes">Yes</label>
+                  </div>
+                </div>
+                <div>
+                  <label>Very sleepy/unconscious?</label>
+                  <div class="segmented" role="group" aria-label="Very sleepy or unconscious">
+                    <input id="ds_lethargy_no" type="radio" name="ds_lethargy" value="No" {{ checked('ds_lethargy','No','No') }}>
+                    <label for="ds_lethargy_no">No</label>
+                    <input id="ds_lethargy_yes" type="radio" name="ds_lethargy" value="Yes" {{ checked('ds_lethargy','Yes','No') }}>
+                    <label for="ds_lethargy_yes">Yes</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <h3>Main symptoms</h3>
+            <div class="row">
+              <div>
+                <label>Fever now or in last 2 days?</label>
+                <div class="segmented" role="group" aria-label="Fever">
+                  <input id="fever_no" type="radio" name="fever" value="No" {{ checked('fever','No','No') }}>
+                  <label for="fever_no">No</label>
+                  <input id="fever_yes" type="radio" name="fever" value="Yes" {{ checked('fever','Yes','No') }}>
+                  <label for="fever_yes">Yes</label>
+                </div>
+              </div>
+              <div>
+                <label>Cough or difficult breathing?</label>
+                <div class="segmented" role="group" aria-label="Cough or difficult breathing">
+                  <input id="cough_breath_no" type="radio" name="cough_breath" value="No" {{ checked('cough_breath','No','No') }}>
+                  <label for="cough_breath_no">No</label>
+                  <input id="cough_breath_yes" type="radio" name="cough_breath" value="Yes" {{ checked('cough_breath','Yes','No') }}>
+                  <label for="cough_breath_yes">Yes</label>
+                </div>
+              </div>
+            </div>
+
+            <label for="rr">Breaths per minute (optional)</label>
+            <input id="rr" type="number" name="rr" min="0" max="120" inputmode="numeric" value="{{ form.get('rr','') }}" placeholder="e.g., 48">
+            <div class="hint">Tip: count breaths for 60 seconds while the child is calm.</div>
+
+            <div class="row" style="margin-top: 10px;">
+              <div>
+                <label>Chest indrawing?</label>
+                <div class="segmented" role="group" aria-label="Chest indrawing">
+                  <input id="chest_indrawing_no" type="radio" name="chest_indrawing" value="No" {{ checked('chest_indrawing','No','No') }}>
+                  <label for="chest_indrawing_no">No</label>
+                  <input id="chest_indrawing_yes" type="radio" name="chest_indrawing" value="Yes" {{ checked('chest_indrawing','Yes','No') }}>
+                  <label for="chest_indrawing_yes">Yes</label>
+                </div>
+              </div>
+              <div>
+                <label>Stridor (noisy breathing when calm)?</label>
+                <div class="segmented" role="group" aria-label="Stridor">
+                  <input id="stridor_no" type="radio" name="stridor" value="No" {{ checked('stridor','No','No') }}>
+                  <label for="stridor_no">No</label>
+                  <input id="stridor_yes" type="radio" name="stridor" value="Yes" {{ checked('stridor','Yes','No') }}>
+                  <label for="stridor_yes">Yes</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <h3>Nutrition</h3>
+            <div class="row">
+              <div>
+                <label for="muac">MUAC color (6–59 months)</label>
+                <select id="muac" name="muac" required>
+                  <option value="not_measured" {{ selected('muac','not_measured','not_measured') }}>Not measured</option>
+                  <option value="green" {{ selected('muac','green','not_measured') }}>Green</option>
+                  <option value="yellow" {{ selected('muac','yellow','not_measured') }}>Yellow</option>
+                  <option value="red" {{ selected('muac','red','not_measured') }}>Red</option>
+                </select>
+              </div>
+              <div>
+                <label>Swelling on both feet?</label>
+                <div class="segmented" role="group" aria-label="Swelling on both feet">
+                  <input id="oedema_no" type="radio" name="oedema" value="No" {{ checked('oedema','No','No') }}>
+                  <label for="oedema_no">No</label>
+                  <input id="oedema_yes" type="radio" name="oedema" value="Yes" {{ checked('oedema','Yes','No') }}>
+                  <label for="oedema_yes">Yes</label>
+                </div>
+              </div>
+            </div>
+
+            <div id="young_infant" class="card" style="margin-top: 14px;" aria-label="Young infant add-on">
+              <h3>Young infant add-on (0–2 months)</h3>
+              <p class="muted">Only answer if the age group is 0–2 months.</p>
+              <div class="row">
+                <div>
+                  <label>Not feeding well?</label>
+                  <div class="segmented" role="group" aria-label="Not feeding well">
+                    <input id="not_feeding_no" type="radio" name="not_feeding" value="No" {{ checked('not_feeding','No','No') }}>
+                    <label for="not_feeding_no">No</label>
+                    <input id="not_feeding_yes" type="radio" name="not_feeding" value="Yes" {{ checked('not_feeding','Yes','No') }}>
+                    <label for="not_feeding_yes">Yes</label>
+                  </div>
+                </div>
+                <div>
+                  <label>Moves only when stimulated?</label>
+                  <div class="segmented" role="group" aria-label="Moves only when stimulated">
+                    <input id="stim_only_no" type="radio" name="stim_only" value="No" {{ checked('stim_only','No','No') }}>
+                    <label for="stim_only_no">No</label>
+                    <input id="stim_only_yes" type="radio" name="stim_only" value="Yes" {{ checked('stim_only','Yes','No') }}>
+                    <label for="stim_only_yes">Yes</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <h3>Malaria test (if available)</h3>
+            <label for="rdt">RDT result</label>
+            <select id="rdt" name="rdt" required>
+              <option value="not_done" {{ selected('rdt','not_done','not_done') }}>Not done</option>
+              <option value="negative" {{ selected('rdt','negative','not_done') }}>Negative</option>
+              <option value="positive" {{ selected('rdt','positive','not_done') }}>Positive</option>
+            </select>
+
+            <div class="sticky-actions">
+              <div class="btn-row">
+                <button class="btn btn-primary" type="submit">
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  Get result
+                </button>
+                <button class="btn btn-secondary" type="reset">Reset</button>
+              </div>
+            </div>
+          </form>
+        </section>
+      </main>
+
+      <aside>
+        <section class="card" aria-label="Quick guidance">
+          <h2>Quick guidance</h2>
+          <p class="muted">Use this as a structured checklist during assessment.</p>
+          <ul>
+            <li>Start with danger signs.</li>
+            <li>Measure breathing rate if possible.</li>
+            <li>Measure MUAC for 6–59 months when available.</li>
+            <li>If unsure, arrange follow-up or refer per local protocol.</li>
+          </ul>
+        </section>
+
+        <section class="card" aria-label="Privacy">
+          <h2>Privacy</h2>
+          <p class="muted">Keep messages short and avoid sensitive identifiers. The WhatsApp numbers are optional.</p>
+        </section>
+      </aside>
     </div>
+  </div>
 
-    <script>
-      function copyShareText() {
-        const el = document.getElementById('shareText');
-        el.select();
-        el.setSelectionRange(0, 999999);
-        try {
-          document.execCommand('copy');
-          document.getElementById('copyStatus').textContent = "Copied.";
-        } catch (e) {
-          document.getElementById('copyStatus').textContent = "Copy failed. Long-press to copy.";
-        }
-        window.getSelection().removeAllRanges();
+  <script>
+    function copyShareText() {
+      const el = document.getElementById('shareText');
+      const status = document.getElementById('copyStatus');
+      if (!el) return;
+
+      const text = el.value || el.textContent || "";
+      const done = () => { if (status) status.textContent = "Copied."; };
+      const fail = () => { if (status) status.textContent = "Copy failed. Long-press to copy."; };
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(fail);
+        return;
       }
-    </script>
-  {% endif %}
 
-  <form method="post" class="card">
-    <h2>Child basics</h2>
+      el.focus();
+      el.select();
+      el.setSelectionRange(0, 999999);
+      try {
+        document.execCommand('copy');
+        done();
+      } catch (e) {
+        fail();
+      }
+      window.getSelection().removeAllRanges();
+    }
 
-    <div class="row">
-      <div>
-        <label>Age group</label>
-        <select name="age_group" required>
-          <option value="0_2m">0–2 months</option>
-          <option value="2_12m">2–12 months</option>
-          <option value="1_5y">1–5 years</option>
-        </select>
-      </div>
-      <div>
-        <label>Caregiver WhatsApp number (optional)</label>
-        <input type="text" name="wa_caregiver" placeholder="Digits only, include country code (e.g., 2547xxxxxxx)">
-      </div>
-    </div>
+    function syncYoungInfant() {
+      const age = document.getElementById('age_group');
+      const box = document.getElementById('young_infant');
+      if (!age || !box) return;
+      const show = age.value === '0_2m';
+      box.classList.toggle('hidden', !show);
+    }
 
-    <label>Supervisor WhatsApp number (optional)</label>
-    <input type="text" name="wa_supervisor" placeholder="Digits only, include country code (e.g., 2547xxxxxxx)">
-
-    <div class="card warn">
-      <h3>Danger signs (tap Yes/No)</h3>
-      <div class="row">
-        <div>
-          <label>Not able to drink/breastfeed?</label>
-          <select name="ds_drink" required><option>No</option><option>Yes</option></select>
-        </div>
-        <div>
-          <label>Vomits everything?</label>
-          <select name="ds_vomit" required><option>No</option><option>Yes</option></select>
-        </div>
-        <div>
-          <label>Convulsions?</label>
-          <select name="ds_convulsions" required><option>No</option><option>Yes</option></select>
-        </div>
-        <div>
-          <label>Very sleepy/unconscious?</label>
-          <select name="ds_lethargy" required><option>No</option><option>Yes</option></select>
-        </div>
-      </div>
-    </div>
-
-    <h2>Main symptoms</h2>
-    <div class="row">
-      <div>
-        <label>Fever now or in last 2 days?</label>
-        <select name="fever" required><option>No</option><option>Yes</option></select>
-      </div>
-      <div>
-        <label>Cough or difficult breathing?</label>
-        <select name="cough_breath" required><option>No</option><option>Yes</option></select>
-      </div>
-    </div>
-
-    <label>Breaths per minute (optional but recommended)</label>
-    <input type="number" name="rr" min="0" max="120" placeholder="e.g., 48">
-
-    <div class="row">
-      <div>
-        <label>Chest indrawing?</label>
-        <select name="chest_indrawing" required><option>No</option><option>Yes</option></select>
-      </div>
-      <div>
-        <label>Stridor (noisy breathing when calm)?</label>
-        <select name="stridor" required><option>No</option><option>Yes</option></select>
-      </div>
-    </div>
-
-    <h2>Nutrition</h2>
-    <div class="row">
-      <div>
-        <label>MUAC color (6–59 months)</label>
-        <select name="muac" required>
-          <option value="not_measured">Not measured</option>
-          <option value="green">Green</option>
-          <option value="yellow">Yellow</option>
-          <option value="red">Red</option>
-        </select>
-      </div>
-      <div>
-        <label>Swelling on both feet?</label>
-        <select name="oedema" required><option>No</option><option>Yes</option></select>
-      </div>
-    </div>
-
-    <h2>Young infant add-on (only matters if age 0–2 months)</h2>
-    <div class="row">
-      <div>
-        <label>Not feeding well?</label>
-        <select name="not_feeding" required><option>No</option><option>Yes</option></select>
-      </div>
-      <div>
-        <label>Moves only when stimulated?</label>
-        <select name="stim_only" required><option>No</option><option>Yes</option></select>
-      </div>
-    </div>
-
-    <h2>Malaria test (if available)</h2>
-    <label>RDT result</label>
-    <select name="rdt" required>
-      <option value="not_done">Not done</option>
-      <option value="negative">Negative</option>
-      <option value="positive">Positive</option>
-    </select>
-
-    <button class="btn btn-primary" type="submit">Get result</button>
-  </form>
+    document.addEventListener('DOMContentLoaded', () => {
+      const age = document.getElementById('age_group');
+      if (age) {
+        age.addEventListener('change', syncYoungInfant);
+      }
+      syncYoungInfant();
+    });
+  </script>
 </body>
 </html>
 """
@@ -231,7 +594,7 @@ def softmax(scores: dict) -> dict:
 def digits_only(s: str) -> str:
     if not s:
         return ""
-    return re.sub(r"\\D+", "", s)
+    return re.sub(r"\D+", "", s)
 
 def make_whatsapp_link(message: str, phone_digits: str = "") -> str:
     # If phone_digits is blank, user chooses recipient in WhatsApp UI.
@@ -448,9 +811,11 @@ def compute_result(a: dict):
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
+    form_data = {}
     if request.method == "POST":
-        result = compute_result(request.form.to_dict())
-    return render_template_string(HTML, result=result)
+        form_data = request.form.to_dict()
+        result = compute_result(form_data)
+    return render_template_string(HTML, result=result, form=form_data)
 
 if __name__ == "__main__":
     # Runs offline on local network / device
