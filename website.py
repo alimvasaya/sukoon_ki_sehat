@@ -1,10 +1,14 @@
 # app.py
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string, request, redirect, url_for
 import math
 import re
+import sqlite3
+import json
 from urllib.parse import quote
+from datetime import datetime
 
 app = Flask(__name__)
+DB_PATH = "toto.db"
 
 HTML = """
 <!doctype html>
@@ -34,7 +38,7 @@ HTML = """
       :root {
         --bg: #f6f7fb;
         --surface: rgba(0,0,0,0.03);
-        --card: rgba(255,255,255,0.9);
+        --card: rgba(255,255,255,0.92);
         --text: rgba(10,14,28,0.92);
         --muted: rgba(10,14,28,0.62);
         --border: rgba(10,14,28,0.10);
@@ -58,7 +62,7 @@ HTML = """
         var(--bg);
     }
     a { color: inherit; }
-    .container { max-width: 980px; margin: 0 auto; padding: 18px 14px 28px; }
+    .container { max-width: 1060px; margin: 0 auto; padding: 18px 14px 28px; }
     .topbar {
       display: flex;
       align-items: center;
@@ -87,10 +91,12 @@ HTML = """
       white-space: nowrap;
     }
     .badge-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent2); box-shadow: 0 0 0 3px rgba(32,201,151,0.18); }
+
     .grid { display: grid; gap: 14px; margin-top: 14px; }
     @media (min-width: 920px) {
-      .grid { grid-template-columns: 1.05fr 0.95fr; align-items: start; }
+      .grid { grid-template-columns: 1.1fr 0.9fr; align-items: start; }
     }
+
     .card {
       border: 1px solid var(--border);
       background: var(--card);
@@ -105,10 +111,7 @@ HTML = """
     .hint { margin-top: 6px; color: var(--muted); font-size: 0.9rem; }
     .divider { height: 1px; background: var(--border); margin: 12px 0; }
 
-    .result {
-      position: relative;
-      overflow: hidden;
-    }
+    .result { position: relative; overflow: hidden; }
     .result::before {
       content: "";
       position: absolute;
@@ -118,7 +121,6 @@ HTML = """
       opacity: 0.6;
     }
     .result > * { position: relative; }
-
     .pill-row { display:flex; flex-wrap:wrap; gap: 8px; margin-bottom: 10px; }
     .pill {
       display:inline-flex;
@@ -128,21 +130,34 @@ HTML = """
       border-radius: 999px;
       border: 1px solid var(--border);
       background: rgba(255,255,255,0.06);
-      font-weight: 700;
+      font-weight: 800;
       font-size: 0.88rem;
     }
-    .pill strong { font-weight: 800; }
 
     .danger { border-color: rgba(255,92,119,0.35); background: linear-gradient(180deg, rgba(255,92,119,0.16), rgba(255,255,255,0.06)); }
-    .warn { border-color: rgba(255,207,90,0.35); background: linear-gradient(180deg, rgba(255,207,90,0.16), rgba(255,255,255,0.06)); }
-    .ok { border-color: rgba(47,208,124,0.35); background: linear-gradient(180deg, rgba(47,208,124,0.16), rgba(255,255,255,0.06)); }
+    .warn   { border-color: rgba(255,207,90,0.35);  background: linear-gradient(180deg, rgba(255,207,90,0.16), rgba(255,255,255,0.06)); }
+    .ok     { border-color: rgba(47,208,124,0.35);  background: linear-gradient(180deg, rgba(47,208,124,0.16), rgba(255,255,255,0.06)); }
 
     form { margin: 0; }
-    label { display:block; margin: 10px 0 6px; font-weight: 700; }
+    label { display:block; margin: 10px 0 6px; font-weight: 800; }
+
     .row { display: grid; grid-template-columns: 1fr; gap: 10px; }
-    @media (min-width: 640px) {
-      .row { grid-template-columns: 1fr 1fr; }
-    }
+    @media (min-width: 700px) { .row { grid-template-columns: 1fr 1fr; } }
+
+    .row3 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: end; /* <-- this fixes the misaligned inputs */
+}
+@media (min-width: 820px) {
+  .row3 {
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: end; /* keep it on the 3-col layout too */
+  }
+}
+
+
     input[type="number"], input[type="text"], input[type="tel"], select, textarea {
       width: 100%;
       padding: 11px 12px;
@@ -152,14 +167,36 @@ HTML = """
       color: var(--text);
       outline: none;
     }
+
+    /* dropdown options visibility on dark themes */
+    select { color-scheme: light; }
+    select option { background: #ffffff; color: #111111; }
+
     textarea { min-height: 132px; resize: vertical; }
-    select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 18px) calc(1em + 2px), calc(100% - 13px) calc(1em + 2px); background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; padding-right: 40px; }
+
+    select {
+      appearance: none;
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position:
+        calc(100% - 18px) calc(1em + 2px),
+        calc(100% - 13px) calc(1em + 2px);
+      background-size: 6px 6px, 6px 6px;
+      background-repeat: no-repeat;
+      padding-right: 40px;
+    }
+
     input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.45); }
     @media (prefers-color-scheme: light) {
       input::placeholder, textarea::placeholder { color: rgba(10,14,28,0.38); }
     }
-    input:focus, select:focus, textarea:focus { border-color: rgba(124,108,255,0.65); box-shadow: 0 0 0 4px rgba(124,108,255,0.18); }
+    input:focus, select:focus, textarea:focus {
+      border-color: rgba(124,108,255,0.65);
+      box-shadow: 0 0 0 4px rgba(124,108,255,0.18);
+    }
 
+    /* segmented alignment */
     .segmented {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -171,30 +208,29 @@ HTML = """
     .segmented input { position: absolute; opacity: 0; pointer-events: none; }
     .segmented label {
       margin: 0;
-      padding: 10px 12px;
-      font-weight: 800;
+      padding: 12px 12px;
+      font-weight: 900;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
       cursor: pointer;
       user-select: none;
+      min-height: 46px;
     }
     .segmented label:hover { background: rgba(255,255,255,0.06); }
-    .segmented input:focus-visible + label { outline: 3px solid rgba(124,108,255,0.45); outline-offset: -3px; }
-    .segmented input:checked + label {
-      background: rgba(124,108,255,0.20);
-      border-left: 1px solid rgba(124,108,255,0.25);
-      border-right: 1px solid rgba(124,108,255,0.25);
-    }
     .segmented label:first-of-type { border-right: 1px solid var(--border); }
+    .segmented input:checked + label {
+      background: rgba(124,108,255,0.22);
+      box-shadow: inset 0 0 0 1px rgba(124,108,255,0.35);
+    }
+    .segmented input:focus-visible + label { outline: 3px solid rgba(124,108,255,0.45); outline-offset: -3px; }
 
     .btn-row { display:flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
     .btn {
       padding: 12px 14px;
       border: 1px solid transparent;
       border-radius: 14px;
-      font-weight: 850;
+      font-weight: 900;
       cursor: pointer;
       display:inline-flex;
       align-items:center;
@@ -202,34 +238,52 @@ HTML = """
       gap: 10px;
       text-decoration:none;
       text-align:center;
-      min-height: 44px;
+      min-height: 46px;
       transition: transform 0.05s ease, filter 0.15s ease, background 0.15s ease;
       flex: 1 1 220px;
     }
     .btn:active { transform: translateY(1px); }
     .btn-primary { background: var(--accent); color: #fff; }
     .btn-secondary { background: rgba(255,255,255,0.08); border-color: var(--border); color: var(--text); }
+    .btn-danger { background: rgba(255,92,119,0.22); border-color: rgba(255,92,119,0.30); color: var(--text); }
     .btn-whatsapp { background: #25D366; color: #fff; }
     .btn:focus-visible { outline: 3px solid rgba(124,108,255,0.55); outline-offset: 3px; }
     .btn svg { width: 18px; height: 18px; }
 
-    .sticky-actions {
-      position: sticky;
-      bottom: 10px;
-      margin-top: 14px;
-      z-index: 3;
-    }
-
+    .sticky-actions { position: sticky; bottom: 10px; margin-top: 14px; z-index: 3; }
     .hidden { display: none !important; }
-
     ul { margin: 8px 0 0 18px; }
     li { margin: 6px 0; }
+
+    .table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .table th, .table td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      font-size: 0.95rem;
+    }
+    .nowrap { white-space: nowrap; }
+    .chip {
+      display:inline-flex;
+      align-items:center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      font-weight: 850;
+      font-size: 0.85rem;
+      margin-left: 8px;
+    }
+    .chip-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--accent2);
+      box-shadow: 0 0 0 3px rgba(32,201,151,0.18);
+    }
   </style>
 </head>
 <body>
-  {% macro selected(name, value, default_value='') -%}
-    {% if form.get(name, default_value) == value %}selected{% endif %}
-  {%- endmacro %}
   {% macro checked(name, value, default_value='No') -%}
     {% if form.get(name, default_value) == value %}checked{% endif %}
   {%- endmacro %}
@@ -247,6 +301,41 @@ HTML = """
 
     <div class="grid">
       <main>
+
+        {% if message %}
+          <section class="card warn" aria-label="Message">
+            <strong>{{ message }}</strong>
+          </section>
+        {% endif %}
+
+        <!-- LEFT: Add patient only -->
+        <section class="card" aria-label="Add patient">
+          <h2>Patients (local only)</h2>
+          <p class="muted">This saves on the device (SQLite). Keep info minimal.</p>
+
+          <h3>Add patient</h3>
+          <form method="post" action="{{ url_for('index', patient_id=(selected_patient['id'] if selected_patient else None)) }}">
+            <input type="hidden" name="action" value="add_patient">
+
+            <label for="p_name">Name / nickname</label>
+            <input id="p_name" type="text" name="p_name" required placeholder="e.g., Amina">
+
+            <label for="p_village">Village (optional)</label>
+            <input id="p_village" type="text" name="p_village" placeholder="e.g., Kibera">
+
+            <label for="p_age_group">Default age group</label>
+            <select id="p_age_group" name="p_age_group" required>
+              <option value="0_2m">0–2 months</option>
+              <option value="2_12m">2–12 months</option>
+              <option value="1_5y" selected>1–5 years</option>
+            </select>
+
+            <div class="btn-row">
+              <button class="btn btn-secondary" type="submit">Add patient</button>
+            </div>
+          </form>
+        </section>
+
         {% if result %}
           <section class="card result {{ result.box_class }}" aria-label="Screening result">
             <div class="pill-row">
@@ -331,23 +420,51 @@ HTML = """
           <p class="muted">Answer the questions below. Defaults are set to reduce taps; change anything that applies.</p>
 
           <form method="post" novalidate>
-            <div class="row">
+            <input type="hidden" name="action" value="run_screening">
+
+            <div class="row3">
               <div>
                 <label for="age_group">Age group</label>
                 <select id="age_group" name="age_group" required>
-                  <option value="0_2m" {{ selected('age_group','0_2m','0_2m') }}>0–2 months</option>
-                  <option value="2_12m" {{ selected('age_group','2_12m','0_2m') }}>2–12 months</option>
-                  <option value="1_5y" {{ selected('age_group','1_5y','0_2m') }}>1–5 years</option>
+                  <option value="0_2m" {{ 'selected' if default_age_group=='0_2m' else '' }}>0–2 months</option>
+                  <option value="2_12m" {{ 'selected' if default_age_group=='2_12m' else '' }}>2–12 months</option>
+                  <option value="1_5y" {{ 'selected' if default_age_group=='1_5y' else '' }}>1–5 years</option>
                 </select>
               </div>
               <div>
                 <label for="wa_caregiver">Caregiver WhatsApp (optional)</label>
-                <input id="wa_caregiver" type="tel" name="wa_caregiver" inputmode="numeric" autocomplete="tel" value="{{ form.get('wa_caregiver','') }}" placeholder="Digits only, include country code">
+                <input id="wa_caregiver" type="tel" name="wa_caregiver" inputmode="numeric" autocomplete="tel"
+                       value="{{ form.get('wa_caregiver','') }}"
+                       placeholder="Digits only, include country code">
+              </div>
+              <div>
+                <label for="wa_supervisor">Supervisor WhatsApp (optional)</label>
+                <input id="wa_supervisor" type="tel" name="wa_supervisor" inputmode="numeric" autocomplete="tel"
+                       value="{{ form.get('wa_supervisor','') }}"
+                       placeholder="Digits only, include country code">
               </div>
             </div>
 
-            <label for="wa_supervisor">Supervisor WhatsApp (optional)</label>
-            <input id="wa_supervisor" type="tel" name="wa_supervisor" inputmode="numeric" autocomplete="tel" value="{{ form.get('wa_supervisor','') }}" placeholder="Digits only, include country code">
+            <div class="row" style="margin-top:10px;">
+              <div>
+                <label>Include patient name in WhatsApp message?</label>
+                <div class="segmented" role="group" aria-label="Include patient name">
+                  <input id="include_name_no" type="radio" name="include_name" value="No" {{ checked('include_name','No','No') }}>
+                  <label for="include_name_no">No</label>
+                  <input id="include_name_yes" type="radio" name="include_name" value="Yes" {{ checked('include_name','Yes','No') }}>
+                  <label for="include_name_yes">Yes</label>
+                </div>
+              </div>
+              <div>
+                <label>Include village in WhatsApp message?</label>
+                <div class="segmented" role="group" aria-label="Include village">
+                  <input id="include_village_no" type="radio" name="include_village" value="No" {{ checked('include_village','No','No') }}>
+                  <label for="include_village_no">No</label>
+                  <input id="include_village_yes" type="radio" name="include_village" value="Yes" {{ checked('include_village','Yes','No') }}>
+                  <label for="include_village_yes">Yes</label>
+                </div>
+              </div>
+            </div>
 
             <div class="divider"></div>
 
@@ -420,7 +537,8 @@ HTML = """
             </div>
 
             <label for="rr">Breaths per minute (optional)</label>
-            <input id="rr" type="number" name="rr" min="0" max="120" inputmode="numeric" value="{{ form.get('rr','') }}" placeholder="e.g., 48">
+            <input id="rr" type="number" name="rr" min="0" max="120" inputmode="numeric"
+                   value="{{ form.get('rr','') }}" placeholder="e.g., 48">
             <div class="hint">Tip: count breaths for 60 seconds while the child is calm.</div>
 
             <div class="row" style="margin-top: 10px;">
@@ -451,18 +569,18 @@ HTML = """
               <div>
                 <label for="muac">MUAC color (6–59 months)</label>
                 <select id="muac" name="muac" required>
-                  <option value="not_measured" {{ selected('muac','not_measured','not_measured') }}>Not measured</option>
-                  <option value="green" {{ selected('muac','green','not_measured') }}>Green</option>
-                  <option value="yellow" {{ selected('muac','yellow','not_measured') }}>Yellow</option>
-                  <option value="red" {{ selected('muac','red','not_measured') }}>Red</option>
+                  <option value="not_measured">Not measured</option>
+                  <option value="green">Green</option>
+                  <option value="yellow">Yellow</option>
+                  <option value="red">Red</option>
                 </select>
               </div>
               <div>
                 <label>Swelling on both feet?</label>
                 <div class="segmented" role="group" aria-label="Swelling on both feet">
-                  <input id="oedema_no" type="radio" name="oedema" value="No" {{ checked('oedema','No','No') }}>
+                  <input id="oedema_no" type="radio" name="oedema" value="No" checked>
                   <label for="oedema_no">No</label>
-                  <input id="oedema_yes" type="radio" name="oedema" value="Yes" {{ checked('oedema','Yes','No') }}>
+                  <input id="oedema_yes" type="radio" name="oedema" value="Yes">
                   <label for="oedema_yes">Yes</label>
                 </div>
               </div>
@@ -475,18 +593,18 @@ HTML = """
                 <div>
                   <label>Not feeding well?</label>
                   <div class="segmented" role="group" aria-label="Not feeding well">
-                    <input id="not_feeding_no" type="radio" name="not_feeding" value="No" {{ checked('not_feeding','No','No') }}>
+                    <input id="not_feeding_no" type="radio" name="not_feeding" value="No" checked>
                     <label for="not_feeding_no">No</label>
-                    <input id="not_feeding_yes" type="radio" name="not_feeding" value="Yes" {{ checked('not_feeding','Yes','No') }}>
+                    <input id="not_feeding_yes" type="radio" name="not_feeding" value="Yes">
                     <label for="not_feeding_yes">Yes</label>
                   </div>
                 </div>
                 <div>
                   <label>Moves only when stimulated?</label>
                   <div class="segmented" role="group" aria-label="Moves only when stimulated">
-                    <input id="stim_only_no" type="radio" name="stim_only" value="No" {{ checked('stim_only','No','No') }}>
+                    <input id="stim_only_no" type="radio" name="stim_only" value="No" checked>
                     <label for="stim_only_no">No</label>
-                    <input id="stim_only_yes" type="radio" name="stim_only" value="Yes" {{ checked('stim_only','Yes','No') }}>
+                    <input id="stim_only_yes" type="radio" name="stim_only" value="Yes">
                     <label for="stim_only_yes">Yes</label>
                   </div>
                 </div>
@@ -498,9 +616,9 @@ HTML = """
             <h3>Malaria test (if available)</h3>
             <label for="rdt">RDT result</label>
             <select id="rdt" name="rdt" required>
-              <option value="not_done" {{ selected('rdt','not_done','not_done') }}>Not done</option>
-              <option value="negative" {{ selected('rdt','negative','not_done') }}>Negative</option>
-              <option value="positive" {{ selected('rdt','positive','not_done') }}>Positive</option>
+              <option value="not_done" selected>Not done</option>
+              <option value="negative">Negative</option>
+              <option value="positive">Positive</option>
             </select>
 
             <div class="sticky-actions">
@@ -519,6 +637,96 @@ HTML = """
       </main>
 
       <aside>
+        <!-- RIGHT: Patient list moved into the right column -->
+        <section class="card" aria-label="Patient list">
+          <h2>Patient list</h2>
+
+          {% if patients|length == 0 %}
+            <p class="muted">No patients yet.</p>
+            <div class="divider"></div>
+            <p class="muted">Select a patient if you want to save screening history (optional).</p>
+          {% else %}
+            <table class="table" aria-label="Patient list table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th class="nowrap">Default</th>
+                  <th class="nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in patients %}
+                  <tr>
+                    <td>
+                      {{ p['name'] }}
+                      {% if selected_patient and selected_patient['id'] == p['id'] %}
+                        <span class="chip"><span class="chip-dot"></span>Selected</span>
+                      {% endif %}
+                      {% if p['village'] %}
+                        <div class="muted" style="margin-top:4px;">{{ p['village'] }}</div>
+                      {% endif %}
+                    </td>
+                    <td class="nowrap">{{ p['age_group_label'] }}</td>
+                    <td class="nowrap">
+                      <a class="btn btn-secondary"
+                         style="padding:10px 12px; min-height:0; flex:0 0 auto;"
+                         href="{{ url_for('index', patient_id=p['id']) }}">Select</a>
+
+                      <form method="post"
+                            action="{{ url_for('index', patient_id=(selected_patient['id'] if selected_patient else None)) }}"
+                            style="display:inline;"
+                            onsubmit="return confirm('Delete this patient and history?');">
+                        <input type="hidden" name="action" value="delete_patient">
+                        <input type="hidden" name="patient_id" value="{{ p['id'] }}">
+                        <button class="btn btn-danger"
+                                style="padding:10px 12px; min-height:0; flex:0 0 auto;"
+                                type="submit">Delete</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+
+            <div class="divider"></div>
+
+            {% if selected_patient %}
+              <p class="muted" style="margin:0 0 8px;">
+                Current: <strong>{{ selected_patient['name'] }}</strong>
+                {% if selected_patient.get('village') %} — {{ selected_patient['village'] }}{% endif %}
+              </p>
+
+              <h3 style="margin:10px 0 8px;">Recent screenings (last 5)</h3>
+              {% if history|length == 0 %}
+                <p class="muted">No screenings for this patient yet.</p>
+              {% else %}
+                <table class="table" aria-label="Recent screenings">
+                  <thead>
+                    <tr>
+                      <th class="nowrap">Date</th>
+                      <th>Risk</th>
+                      <th>Top</th>
+                      <th class="nowrap">Certainty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for h in history %}
+                      <tr>
+                        <td class="nowrap">{{ h['created_at'] }}</td>
+                        <td>{{ h['risk'] }}</td>
+                        <td>{{ h['top_condition'] }}</td>
+                        <td class="nowrap">{{ h['certainty'] }}%</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              {% endif %}
+            {% else %}
+              <p class="muted">Select a patient if you want to save screening history (optional).</p>
+            {% endif %}
+          {% endif %}
+        </section>
+
         <section class="card" aria-label="Quick guidance">
           <h2>Quick guidance</h2>
           <p class="muted">Use this as a structured checklist during assessment.</p>
@@ -532,7 +740,7 @@ HTML = """
 
         <section class="card" aria-label="Privacy">
           <h2>Privacy</h2>
-          <p class="muted">Keep messages short and avoid sensitive identifiers. The WhatsApp numbers are optional.</p>
+          <p class="muted">Keep messages short and avoid sensitive identifiers. WhatsApp numbers are optional.</p>
         </section>
       </aside>
     </div>
@@ -556,12 +764,7 @@ HTML = """
       el.focus();
       el.select();
       el.setSelectionRange(0, 999999);
-      try {
-        document.execCommand('copy');
-        done();
-      } catch (e) {
-        fail();
-      }
+      try { document.execCommand('copy'); done(); } catch (e) { fail(); }
       window.getSelection().removeAllRanges();
     }
 
@@ -575,15 +778,48 @@ HTML = """
 
     document.addEventListener('DOMContentLoaded', () => {
       const age = document.getElementById('age_group');
-      if (age) {
-        age.addEventListener('change', syncYoungInfant);
-      }
+      if (age) age.addEventListener('change', syncYoungInfant);
       syncYoungInfant();
     });
   </script>
 </body>
 </html>
 """
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+      CREATE TABLE IF NOT EXISTS patients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        village TEXT,
+        age_group TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    """)
+    conn.execute("""
+      CREATE TABLE IF NOT EXISTS screenings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        patient_id INTEGER,
+        created_at TEXT NOT NULL,
+        risk TEXT NOT NULL,
+        top_condition TEXT NOT NULL,
+        certainty INTEGER NOT NULL,
+        share_message TEXT NOT NULL,
+        raw_answers TEXT NOT NULL,
+        FOREIGN KEY(patient_id) REFERENCES patients(id)
+      )
+    """)
+    conn.commit()
+    conn.close()
+
+def get_conn():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def age_group_label(v: str) -> str:
+    return {"0_2m": "0–2 months", "2_12m": "2–12 months", "1_5y": "1–5 years"}.get(v, v)
 
 def softmax(scores: dict) -> dict:
     m = max(scores.values())
@@ -597,39 +833,38 @@ def digits_only(s: str) -> str:
     return re.sub(r"\D+", "", s)
 
 def make_whatsapp_link(message: str, phone_digits: str = "") -> str:
-    # If phone_digits is blank, user chooses recipient in WhatsApp UI.
     encoded = quote(message)
     if phone_digits:
         return f"https://wa.me/{phone_digits}?text={encoded}"
     return f"https://wa.me/?text={encoded}"
 
-def compute_result(a: dict):
-    # WhatsApp numbers (optional)
+def compute_result(a: dict, selected_patient=None):
     wa_caregiver = digits_only(a.get("wa_caregiver", ""))
     wa_supervisor = digits_only(a.get("wa_supervisor", ""))
 
-    # Danger signs (IMCI override)
-    danger = any(a[k] == "Yes" for k in ["ds_drink", "ds_vomit", "ds_convulsions", "ds_lethargy"])
+    include_name = (a.get("include_name", "No") == "Yes")
+    include_village = (a.get("include_village", "No") == "Yes")
 
-    age = a["age_group"]
-    fever = (a["fever"] == "Yes")
-    cough = (a["cough_breath"] == "Yes")
+    danger = any(a.get(k, "No") == "Yes" for k in ["ds_drink", "ds_vomit", "ds_convulsions", "ds_lethargy"])
+
+    age = a.get("age_group", "0_2m")
+    fever = (a.get("fever") == "Yes")
+    cough = (a.get("cough_breath") == "Yes")
 
     rr = a.get("rr")
     rr = int(rr) if rr and str(rr).strip().isdigit() else None
 
-    chest_indrawing = (a["chest_indrawing"] == "Yes")
-    stridor = (a["stridor"] == "Yes")
+    chest_indrawing = (a.get("chest_indrawing") == "Yes")
+    stridor = (a.get("stridor") == "Yes")
 
-    muac = a["muac"]
-    oedema = (a["oedema"] == "Yes")
+    muac = a.get("muac", "not_measured")
+    oedema = (a.get("oedema") == "Yes")
 
-    not_feeding = (a["not_feeding"] == "Yes")
-    stim_only = (a["stim_only"] == "Yes")
+    not_feeding = (a.get("not_feeding") == "Yes")
+    stim_only = (a.get("stim_only") == "Yes")
 
-    rdt = a["rdt"]  # not_done / negative / positive
+    rdt = a.get("rdt", "not_done")
 
-    # Initialize scores
     scores = {
         "Pneumonia": 0.0,
         "Malaria": 0.0,
@@ -637,21 +872,17 @@ def compute_result(a: dict):
         "Neonatal complications": 0.0,
     }
 
-    # Age gating
     if age == "0_2m":
         scores["Neonatal complications"] += 2.0
 
-    # Fever drives malaria + neonatal
     if fever:
         scores["Malaria"] += 2.5
         if age == "0_2m":
             scores["Neonatal complications"] += 2.0
 
-    # Cough/difficult breathing drives pneumonia
     if cough:
         scores["Pneumonia"] += 2.5
 
-    # Fast breathing thresholds (IMCI-style)
     fast_breathing = False
     if rr is not None:
         if age == "2_12m" and rr >= 50:
@@ -674,13 +905,11 @@ def compute_result(a: dict):
     if stridor:
         scores["Pneumonia"] += 2.0
 
-    # Malaria test discriminator
     if rdt == "positive":
         scores["Malaria"] += 6.0
     elif rdt == "negative":
         scores["Malaria"] -= 3.0
 
-    # Nutrition scoring
     if oedema:
         scores["Malnutrition"] += 7.0
     if muac == "red":
@@ -688,24 +917,19 @@ def compute_result(a: dict):
     elif muac == "yellow":
         scores["Malnutrition"] += 3.0
 
-    # Young infant signs
     if age == "0_2m":
         if not_feeding:
             scores["Neonatal complications"] += 3.5
         if stim_only:
             scores["Neonatal complications"] += 3.5
 
-    # Risk tier logic (safe)
     high_triggers = []
     if danger:
         high_triggers.append("General danger sign present")
-
     if oedema or muac == "red":
         high_triggers.append("Severe acute malnutrition signs")
-
     if (cough and (chest_indrawing or stridor)) or (cough and fast_breathing and age == "0_2m"):
         high_triggers.append("Severe breathing problem signs")
-
     if age == "0_2m" and (not_feeding or stim_only or fast_breathing or chest_indrawing or fever):
         high_triggers.append("Young infant severe illness signs")
 
@@ -715,7 +939,6 @@ def compute_result(a: dict):
     alternatives = [(n, int(round(p * 100))) for n, p in sorted_probs[1:3]]
     certainty = int(round(top_p * 100))
 
-    # Choose risk
     if high_triggers:
         risk = "High"
         box_class = "danger"
@@ -726,9 +949,7 @@ def compute_result(a: dict):
         risk = "Low"
         box_class = "ok"
 
-    # Actions + tips (no dosing; refer to protocol)
-    actions = []
-    tips = []
+    actions, tips = [], []
 
     if risk == "High":
         actions.append("Refer urgently to the nearest health facility now.")
@@ -773,24 +994,27 @@ def compute_result(a: dict):
             "If feeding is poor, fever/low temperature, or low movement—go urgently.",
         ]
 
-    # Build a WhatsApp-safe summary (keep it short, avoid sensitive identifiers)
-    # Include 1–2 key actions only to keep it readable in chat.
     action_short = actions[:2]
     alt_text = ", ".join([f"{n} {pct}%" for n, pct in alternatives])
 
-    share_message_lines = [
-        "Toto Gemma — Under-5 screening result",
+    share_lines = ["Toto Gemma — Under-5 screening result"]
+
+    if selected_patient and include_name:
+        share_lines.append(f"Patient: {selected_patient['name']}")
+    if selected_patient and include_village and (selected_patient.get("village") or "").strip():
+        share_lines.append(f"Village: {selected_patient['village']}")
+
+    share_lines += [
         f"Risk: {risk}",
         f"Most likely: {top_name} ({certainty}%)",
         f"Also consider: {alt_text}" if alt_text else "",
         "Next steps:",
     ]
-    share_message_lines += [f"- {s}" for s in action_short]
-
+    share_lines += [f"- {s}" for s in action_short]
     if danger:
-        share_message_lines.append("Danger signs present: seek urgent care now.")
+        share_lines.append("Danger signs present: seek urgent care now.")
 
-    share_message = "\n".join([line for line in share_message_lines if line.strip()])
+    share_message = "\n".join([x for x in share_lines if x.strip()])
 
     wa_caregiver_url = make_whatsapp_link(share_message, wa_caregiver)
     wa_supervisor_url = make_whatsapp_link(share_message, wa_supervisor)
@@ -806,17 +1030,119 @@ def compute_result(a: dict):
         "share_message": share_message,
         "wa_caregiver_url": wa_caregiver_url,
         "wa_supervisor_url": wa_supervisor_url,
+        "raw_answers": a,
     }
 
 @app.route("/", methods=["GET", "POST"])
 def index():
+    init_db()
+    conn = get_conn()
+
+    patient_id = (request.args.get("patient_id") or "").strip()
+    message = None
     result = None
     form_data = {}
+
     if request.method == "POST":
-        form_data = request.form.to_dict()
-        result = compute_result(form_data)
-    return render_template_string(HTML, result=result, form=form_data)
+        action = request.form.get("action", "")
+
+        if action == "add_patient":
+            name = (request.form.get("p_name") or "").strip()
+            village = (request.form.get("p_village") or "").strip()
+            age_group = request.form.get("p_age_group", "1_5y")
+
+            if not name:
+                message = "Patient name is required."
+            else:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                conn.execute(
+                    "INSERT INTO patients (name, village, age_group, created_at) VALUES (?,?,?,?)",
+                    (name, village, age_group, now),
+                )
+                conn.commit()
+                new_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+                conn.close()
+                return redirect(url_for("index", patient_id=new_id))
+
+        elif action == "delete_patient":
+            del_id = (request.form.get("patient_id") or "").strip()
+            if del_id.isdigit():
+                conn.execute("DELETE FROM screenings WHERE patient_id = ?", (int(del_id),))
+                conn.execute("DELETE FROM patients WHERE id = ?", (int(del_id),))
+                conn.commit()
+                conn.close()
+                if patient_id == del_id:
+                    return redirect(url_for("index"))
+                return redirect(url_for("index", patient_id=patient_id if patient_id.isdigit() else None))
+            else:
+                message = "Invalid patient id."
+
+        elif action == "run_screening":
+            form_data = request.form.to_dict()
+
+            selected_patient = None
+            if patient_id.isdigit():
+                row = conn.execute("SELECT * FROM patients WHERE id = ?", (int(patient_id),)).fetchone()
+                if row:
+                    selected_patient = dict(row)
+
+            result = compute_result(form_data, selected_patient=selected_patient)
+
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            pid_to_save = int(patient_id) if patient_id.isdigit() else None
+
+            conn.execute(
+                """INSERT INTO screenings
+                   (patient_id, created_at, risk, top_condition, certainty, share_message, raw_answers)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (
+                    pid_to_save,
+                    now,
+                    result["risk"],
+                    result["top_condition"],
+                    int(result["certainty"]),
+                    result["share_message"],
+                    json.dumps(result["raw_answers"], ensure_ascii=False),
+                ),
+            )
+            conn.commit()
+
+    patients_rows = conn.execute("SELECT * FROM patients ORDER BY id DESC").fetchall()
+    patients = []
+    for r in patients_rows:
+        d = dict(r)
+        d["age_group_label"] = age_group_label(d["age_group"])
+        patients.append(d)
+
+    selected_patient = None
+    default_age_group = "0_2m"
+    history = []
+
+    if patient_id.isdigit():
+        row = conn.execute("SELECT * FROM patients WHERE id = ?", (int(patient_id),)).fetchone()
+        if row:
+            selected_patient = dict(row)
+            selected_patient["age_group_label"] = age_group_label(selected_patient["age_group"])
+            default_age_group = selected_patient["age_group"]
+            rows = conn.execute(
+                "SELECT created_at, risk, top_condition, certainty FROM screenings WHERE patient_id = ? ORDER BY id DESC LIMIT 5",
+                (int(patient_id),),
+            ).fetchall()
+            history = [dict(x) for x in rows]
+
+    conn.close()
+
+    return render_template_string(
+        HTML,
+        result=result,
+        form=form_data,
+        message=message,
+        patients=patients,
+        selected_patient=selected_patient,
+        history=history,
+        default_age_group=default_age_group,
+    )
 
 if __name__ == "__main__":
-    # Runs offline on local network / device
+    init_db()
     app.run(host="0.0.0.0", port=5000, debug=False)
